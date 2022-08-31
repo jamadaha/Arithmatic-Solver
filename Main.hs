@@ -1,3 +1,6 @@
+{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
+{-# HLINT ignore "Redundant if" #-}
+{-# HLINT ignore "Redundant bracket" #-}
 import Text.ParserCombinators.Parsec;
 import Text.Read
 import Control.Exception
@@ -15,6 +18,32 @@ data Symbol = Error | Num | Add | Sub | Mul | Div | LPar | RPar
 
 data SyntaxTree = Branch (SyntaxTree, SyntaxTree, SyntaxTree) | Leaf Symbol
     deriving (Eq, Show);
+
+t1 :: (a, b, c) -> a;
+t1 (a, _, _) = a;
+
+t2 :: (a, b, c) -> b;
+t2 (_, b, _) = b;
+
+t3 :: (a, b, c) -> c;
+t3 (_, _, c) = c;
+
+isLeaf :: SyntaxTree -> Bool;
+isLeaf (Leaf _) = True;
+isLeaf _ = False;
+
+isBranch :: SyntaxTree -> Bool;
+isBranch (Branch _) = True;
+isBranch _ = False;
+
+-- Assumes that it is symbol
+asSymbol :: SyntaxTree -> Symbol;
+asSymbol (Leaf leaf) = leaf;
+asSymbol (Branch branch) = throw OtherError
+
+asTuple :: SyntaxTree -> (SyntaxTree, SyntaxTree, SyntaxTree)
+asTuple (Branch branch) = branch;
+asTuple (Leaf leaf) = throw OtherError
 
 indexOf :: [Char] -> Char -> Int -> Int;
 indexOf input c index = do
@@ -90,6 +119,32 @@ lexAnal input symbols = do
             then lexAnal (drop (length substr + 1) input) (toSymbol substr: symbols)
             else throw ScannerError;
 
+isParenthesis :: SyntaxTree -> Bool;
+isParenthesis input = do
+    if (isLeaf input)
+        then False;
+        else do
+    let tuple = asTuple input;
+    if (isBranch (t1 tuple) || isBranch (t3 tuple))
+        then False;
+        else (((asSymbol (t1 tuple)) == LPar) && ((asSymbol (t3 tuple)) == RPar));
+
+isBinaryOperator :: SyntaxTree -> Bool;
+isBinaryOperator input = do
+    if (isLeaf input)
+        then False;
+        else do
+    let tuple = asTuple input;
+    if (isLeaf(t2 tuple))
+        then ((asSymbol(t2 tuple)) `elem` [Add, Sub, Mul, Div])
+        else False;
+
+isNumber :: SyntaxTree -> Bool;
+isNumber input = do
+    if (isBranch input)
+        then False;
+        else ((asSymbol(input)) == Num);
+
 generateSyntaxTree :: [Symbol] -> SyntaxTree;
 generateSyntaxTree input = do
     let currentInput = head input;
@@ -97,14 +152,14 @@ generateSyntaxTree input = do
         then Leaf (head input)
         else do
     if length input == 2
-        then throw SyntaxError
+        then trace "Error 2" throw SyntaxError
         else do
     let nextInput = input !! 1;
     if currentInput == LPar
         then do
             let endScopeIndex = getEndOfScope input;
             if endScopeIndex == -1
-                then throw SyntaxError;
+                then traceShow ("No matching parenthesis " ++ show input) throw SyntaxError;
                 else do
             if endScopeIndex == length input - 1
                 then trace "A1" (Branch (
@@ -118,16 +173,23 @@ generateSyntaxTree input = do
                     generateSyntaxTree (drop (endScopeIndex + 2) input)))
         else if nextInput == Add || nextInput == Sub || nextInput == Mul || nextInput == Div
             then trace "B" (Branch (Leaf currentInput, Leaf nextInput, generateSyntaxTree (drop 2 input)));
-            else if head input == Num
-                then trace "C" (Leaf Num)
-                else throw SyntaxError;
+            else trace "Error 3" throw SyntaxError;
 
-syntaxAnal :: [Symbol] -> SyntaxTree;
+syntaxAnal :: SyntaxTree -> Bool;
 syntaxAnal input = do
-      generateSyntaxTree input;
+    if isParenthesis input
+        then syntaxAnal (t2 (asTuple input))
+        else do
+    if isBinaryOperator input
+        then syntaxAnal(t1 (asTuple input)) && syntaxAnal(t3 (asTuple input))
+        else if isNumber input
+            then True
+            else throw SyntaxError
 
-main = do
-    print (syntaxAnal [LPar, LPar, Num, Add, Num, RPar, Mul, Num, RPar, Add, LPar, Num, RPar]);
+main = do --LPar, LPar, Add, Add, Num, RPar, Mul, Num, RPar, Add, LPar, Num, RPar
+    let syntaxTree = generateSyntaxTree [Num, Sub, LPar, Num, RPar, Add, Num]
+    print syntaxTree
+    print (syntaxAnal syntaxTree);
     --print (lexAnal "12 + 47 - 9" []);
 
 --(2 * 2) + 2 + 2
