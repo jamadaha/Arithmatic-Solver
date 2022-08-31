@@ -6,7 +6,7 @@ import Text.Read
 import Control.Exception
 import Data.Data
 import Debug.Trace
-
+import qualified Data.Text as T
 
 data MyException = ScannerError | SyntaxError | OtherError
     deriving(Show, Typeable);
@@ -60,6 +60,17 @@ getSubString input c = do
     if charIndex == -1
         then input
         else take charIndex input
+
+splitString :: String -> Char -> [String];
+splitString input delim = iSplitString input delim [];
+
+iSplitString :: String -> Char -> [String] -> [String];
+iSplitString input delim tempOutput = do
+    if null input
+        then reverse tempOutput;
+        else do
+    let subString = getSubString input delim;
+    iSplitString (drop (length subString + 1) input) delim (subString:tempOutput);
 
 -- Gets end of scope
 -- Returns -1 if there is no end
@@ -162,17 +173,17 @@ generateSyntaxTree input = do
                 then traceShow ("No matching parenthesis " ++ show input) throw SyntaxError;
                 else do
             if endScopeIndex == length input - 1
-                then trace "A1" (Branch (
+                then (Branch (
                     Leaf LPar,
                     generateSyntaxTree (reverse (drop 1 (reverse (drop 1  input)))),
                     Leaf RPar
                 ))
-                else trace "A2" (Branch (
+                else (Branch (
                     Branch(Leaf LPar, generateSyntaxTree (drop 1 (take endScopeIndex input)), Leaf RPar),
                     Leaf (input !! (endScopeIndex + 1)),
                     generateSyntaxTree (drop (endScopeIndex + 2) input)))
         else if nextInput == Add || nextInput == Sub || nextInput == Mul || nextInput == Div
-            then trace "B" (Branch (Leaf currentInput, Leaf nextInput, generateSyntaxTree (drop 2 input)));
+            then (Branch (Leaf currentInput, Leaf nextInput, generateSyntaxTree (drop 2 input)));
             else trace "Error 3" throw SyntaxError;
 
 syntaxAnal :: SyntaxTree -> Bool;
@@ -186,12 +197,21 @@ syntaxAnal input = do
             then True
             else throw SyntaxError
 
-main = do --LPar, LPar, Add, Add, Num, RPar, Mul, Num, RPar, Add, LPar, Num, RPar
-    let syntaxTree = generateSyntaxTree [Num, Sub, LPar, Num, RPar, Add, Num]
-    print syntaxTree
-    print (syntaxAnal syntaxTree);
-    --print (lexAnal "12 + 47 - 9" []);
+processInput :: String -> IO();
+processInput input = do
+    print ("---- " ++ input ++ " ----");
+    let symbols = (lexAnal input []);
+    let syntaxTree = generateSyntaxTree symbols;
+    let isValidTree = syntaxAnal syntaxTree;
+    
+    print ("Symbols: " ++ show symbols);
+    print ("Syntax Tree: " ++ show syntaxTree);
+    print ("Valid: " ++ show isValidTree);
 
---(2 * 2) + 2 + 2
---2 + (2 * 2)
---2 + 2 + (2 * 2)
+main :: IO ()
+main = do
+    contents <- readFile "input.txt"
+    let exp = splitString contents '\n'
+    let unpackedExp = exp;
+    mapM_ processInput exp
+    
