@@ -8,7 +8,7 @@ import Data.Data
 import Debug.Trace
 import qualified Data.Text as T
 
-data MyException = ScannerError | SyntaxError | OtherError
+data MyException = ScannerError | SyntaxError | TreeError | OtherError
     deriving(Show, Typeable);
 
 instance Exception MyException;
@@ -16,7 +16,7 @@ instance Exception MyException;
 data Symbol = Error | Num | Add | Sub | Mul | Div | LPar | RPar
     deriving(Eq, Show);
 
-data SyntaxTree = Branch (SyntaxTree, SyntaxTree, SyntaxTree) | Leaf Symbol
+data SyntaxTree = Branch (SyntaxTree, SyntaxTree, SyntaxTree) | Leaf (Symbol, Int)
     deriving (Eq, Show);
 
 t1 :: (a, b, c) -> a;
@@ -36,10 +36,13 @@ isBranch :: SyntaxTree -> Bool;
 isBranch (Branch _) = True;
 isBranch _ = False;
 
--- Assumes that it is symbol
 asSymbol :: SyntaxTree -> Symbol;
-asSymbol (Leaf leaf) = leaf;
+asSymbol (Leaf leaf) = fst leaf;
 asSymbol (Branch branch) = throw OtherError
+
+asValue :: SyntaxTree -> Int;
+asValue (Leaf leaf) = snd leaf;
+asValue (Branch branch) = throw OtherError
 
 asTuple :: SyntaxTree -> (SyntaxTree, SyntaxTree, SyntaxTree)
 asTuple (Branch branch) = branch;
@@ -74,18 +77,18 @@ iSplitString input delim tempOutput = do
 
 -- Gets end of scope
 -- Returns -1 if there is no end
-getEndOfScope :: [Symbol] -> Int;
+getEndOfScope :: [(Symbol, Int)] -> Int;
 getEndOfScope input = getEndOfScopeI input 0 0;
 
-getEndOfScopeI :: [Symbol] -> Int -> Int -> Int;
+getEndOfScopeI :: [(Symbol, Int)] -> Int -> Int -> Int;
 getEndOfScopeI input nestLevel currentIndex = do
     if null input
         then -1
-    else if head input == RPar
+    else if fst (head input) == RPar
         then if nestLevel == 1
             then currentIndex
             else getEndOfScopeI (drop 1 input) (nestLevel - 1) (currentIndex + 1)
-    else if head input == LPar
+    else if fst (head input) == LPar
         then getEndOfScopeI (drop 1 input) (nestLevel + 1) (currentIndex + 1)
     else getEndOfScopeI (drop 1 input) nestLevel (currentIndex + 1)
 
@@ -101,26 +104,26 @@ isSymbol str = do
             str == "(" ||
             str == ")")
 
-toSymbol :: String -> Symbol;
+toSymbol :: String -> (Symbol, Int);
 toSymbol str = do
     case readMaybe str :: Maybe Int of
-        Just x -> Num
+        Just x -> (Num, x)
         Nothing ->
             if str == "+"
-                then Add
+                then (Add, 0)
             else if str == "-"
-                then Sub
+                then (Sub, 0)
             else if str == "*"
-                then Mul
+                then (Mul, 0)
             else if str == "/"
-                then Div
+                then (Div, 0)
             else if str == "("
-                then LPar
+                then (LPar, 0)
             else if str == ")"
-                then RPar
-            else Error
+                then (RPar, 0)
+            else (Error, 0)
 
-lexAnal :: String -> [Symbol] -> [Symbol]
+lexAnal :: String -> [(Symbol, Int)] -> [(Symbol, Int)]
 lexAnal input symbols = do
     let substr = getSubString input ' ';
     let validSymbol = isSymbol substr;
@@ -156,7 +159,7 @@ isNumber input = do
         then False;
         else ((asSymbol(input)) == Num);
 
-generateSyntaxTree :: [Symbol] -> SyntaxTree;
+generateSyntaxTree :: [(Symbol, Int)] -> SyntaxTree;
 generateSyntaxTree input = do
     let currentInput = head input;
     if length input == 1
@@ -166,7 +169,7 @@ generateSyntaxTree input = do
         then trace "Error 2" throw SyntaxError
         else do
     let nextInput = input !! 1;
-    if currentInput == LPar
+    if (fst currentInput) == LPar
         then do
             let endScopeIndex = getEndOfScope input;
             if endScopeIndex == -1
@@ -174,15 +177,15 @@ generateSyntaxTree input = do
                 else do
             if endScopeIndex == length input - 1
                 then (Branch (
-                    Leaf LPar,
+                    Leaf (LPar, 0),
                     generateSyntaxTree (reverse (drop 1 (reverse (drop 1  input)))),
-                    Leaf RPar
+                    Leaf (RPar, 0)
                 ))
                 else (Branch (
-                    Branch(Leaf LPar, generateSyntaxTree (drop 1 (take endScopeIndex input)), Leaf RPar),
+                    Branch(Leaf (LPar, 0), generateSyntaxTree (drop 1 (take endScopeIndex input)), Leaf (RPar, 0)),
                     Leaf (input !! (endScopeIndex + 1)),
                     generateSyntaxTree (drop (endScopeIndex + 2) input)))
-        else if nextInput == Add || nextInput == Sub || nextInput == Mul || nextInput == Div
+        else if (fst nextInput) == Add || (fst nextInput) == Sub || (fst nextInput) == Mul || (fst nextInput) == Div
             then (Branch (Leaf currentInput, Leaf nextInput, generateSyntaxTree (drop 2 input)));
             else trace "Error 3" throw SyntaxError;
 
@@ -197,21 +200,42 @@ syntaxAnal input = do
             then True
             else throw SyntaxError
 
+calculate :: SyntaxTree -> Int;
+calculate input = do
+    if isParenthesis input
+        then calculate (t2 (asTuple input))
+        else do
+    if isNumber input
+        then asValue input
+        else do
+    let tuple = asTuple input;
+    case asSymbol (t2 tuple) of
+        Add -> calculate (t1 tuple) + calculate (t3 tuple)
+        Sub -> calculate (t1 tuple) - calculate (t3 tuple)
+        Mul -> calculate (t1 tuple) * calculate (t3 tuple)
+        Div -> calculate (t1 tuple) `quot` calculate (t3 tuple)
+        Error -> throw TreeError
+        LPar -> throw TreeError
+        RPar -> throw TreeError
+        Num -> throw TreeError
+    
+
 processInput :: String -> IO();
 processInput input = do
     print ("---- " ++ input ++ " ----");
     let symbols = (lexAnal input []);
     let syntaxTree = generateSyntaxTree symbols;
     let isValidTree = syntaxAnal syntaxTree;
+    let result = calculate syntaxTree;
     
     print ("Symbols: " ++ show symbols);
     print ("Syntax Tree: " ++ show syntaxTree);
     print ("Valid: " ++ show isValidTree);
+    print ("Output: " ++ show result);
 
 main :: IO ()
 main = do
     contents <- readFile "input.txt"
     let exp = splitString contents '\n'
-    let unpackedExp = exp;
     mapM_ processInput exp
     
