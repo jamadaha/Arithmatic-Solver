@@ -11,6 +11,11 @@ Sidenote:
 First project which I have written in Haskell; expect bad code.
 
 ## Table of Contents
+- [Arithmatic Solver](#arithmatic-solver)
+  - [Table of Contents](#table-of-contents)
+  - [Requirements](#requirements)
+  - [Usage](#usage)
+  - [Example](#example)
 
 ## Requirements
 [GHC](https://www.haskell.org/downloads/) - A Haskell Compiler
