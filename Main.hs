@@ -235,7 +235,7 @@ processInput input = do
 
 main :: IO ()
 main = do
-    contents <- readFile "input.txt"
+    contents <- readFile "Input.txt"
     let exp = splitString contents '\n'
     mapM_ processInput exp
     
